@@ -1,0 +1,985 @@
+---
+title: "Cluster Analysis"
+author: "Caleb Scheidel"
+date: "10/19/2017"
+output: 
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    logo: mc_logo_rectangle.png
+    self_contained: true
+    css: mc_slides.css
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(knitr)
+library(cluster)
+library(factoextra)
+library(clustertend)
+library(NbClust)
+library(fpc)
+library(clValid)
+library(dbscan)
+```
+
+## What is Cluster Analysis?
+
+- Grouping a collection of objects into subsets or "clusters"
+    - objects within each cluster are more closely related to one another than objects assigned to different clusters
+    - an object can be described by a set of measurements or by its relation to other objects
+    
+<br>
+
+- Sometimes, the goal is to arrange the clusters into a natural hierarchy
+    - successively grouping the clusters themselves so that at each level of the hierarchy, clusters within the same group are more similar to each other than those in different groups
+    
+<br>
+
+
+## Cluster Analysis - Overview
+
+1. Distance/dissimilarity measures
+2. Partitioning clustering
+    - K-means, K-mediods (PAM), CLARA
+3. Hierarchical clustering
+    - agglomerative clustering, dendrograms, heatmaps
+4. Cluster validation
+    - clustering tendency
+    - choosing optimal number of clusters
+    - validation statistics
+5. Advanced clustering
+    - hybrid methods, fuzzy clustering, model-based clustering, density-based clustering
+
+
+# Distance/dissimilarity measures
+
+
+## Distance/dissimilarity
+
+- Central to the goals of cluster analysis is the idea of the degree of similarity/dissimilarity between the individual objects being considered
+    - a clustering method attempts to group the objects based on the definition of dissimilarity applied to it
+
+<br>
+
+- The classification of observations into groups requires some methods for computing the distance or dissimilarity between each pair of observations
+    - result of this computation is known as a dissimilarity or distance matrix
+
+
+## Methods for measuring distances
+
+1. Euclidean distance
+2. Manhattan distance
+3. Correlation-based distance
+    - Pearson correlation distance
+    - Eisen cosine correlation distance
+    - Spearman correlation distance
+    - Kendall correlation distance
+
+
+## Correlation-based distances
+
+- Correlation based distances consider two objects to be similar if their features are highly correlated, even though the observed values may be far apart in terms of Euclidean distance.
+    - Pearson correlation is most commonly used 
+        - parametric: depends on the distribution of the data
+        - sensitive to outliers
+    - Kendall and Spearman correlations are non-parametric
+        - used to perform rank-based correlation analysis
+
+## What type of distance measures should we choose?
+
+- In most software, default is Euclidean
+    - If Euclidean distance is chosen, then observations with high values of features will be clustered together and vice versa.
+
+<br>
+
+- Other dissimilarity measures might be preferred, depending on type of data and research questions
+    - if we want to identify clusters of observations with the same overall profiles regardless of their magnitudes, then correlation based distance is preferred
+        - e.g. gene expression data analysis
+
+
+## Data standardization
+
+- Variables are often scaled (standardized) before measuring inter-observation dissimilarities
+    - especially important when variables are measured in different scales (e.g: kg, km, cm, ...)
+
+<br>
+
+- Generally variables are scaled to the standard normal distribution, with a mean of 0 and a SD of 1.
+
+<br>
+
+- Standardization makes the distance measure methods (Euclidean, Manhattan, Correlation) more similar than they would be with non-transformed data.
+
+
+## Implementation in R
+
+```{r, eval = FALSE}
+
+# Euclidean distance
+dist(df, method = "euclidean")
+
+
+# Correlation-based distance
+get_dist(df, method = "pearson")
+
+
+# Distances for mixed data (no numeric columns)
+cluster::daisy(df)
+```
+
+- To visualize distance matrices in R, use `factoextra::fviz_dist()`
+
+# Partitioning clustering
+
+## Partitioning clustering
+
+- Methods used to classify observations into multiple groups based on their similarity
+    - require the analyst to specify the number of clusters to be generated
+
+<br>
+
+- Types of partitioning clustering:
+
+    1. K-means clustering
+    2. K-medoids clustering (PAM)
+    3. CLARA (Clustering Large Applications) Algorithm
+
+## K-means
+
+- K-means clustering (MacQueen, 1967)
+    - most commonly used unsupervised machine learning algorithm for partitioning a data set into k groups
+
+<br>
+
+- The algorithm classifies objects into k clusters, such that 
+    - objects within the same cluster are as similar as possible (high intra-class similarity)
+    - objects from different clusters are as dissimilar as possible
+
+<br>
+
+- In k-means clustering, each cluster is represented by its center, which corresponds to the mean of points assigned to the cluster.
+
+## K-means - basic ideas
+
+- We want to define clusters so that the total within-cluster variation is minimized.
+
+<br>
+
+- Several k-means algorithms available, the standard is the Hartigan-Wong algorithm (1979)
+    - defines the total within-cluster variation as the sum of squared Euclidean distances between the items and the corresponding centroid.
+    - Each observation is assigned to the cluster in which the sum of squares distance of the observation to their assigned cluster centers is minimized
+
+
+## K-means algorithm
+
+1. Specify the number of clusters (k) to be created
+
+2. Randomly select k objects from the data set as the initial cluster centers or means
+
+3. Assign each observation to their closest centroid, based on the Euclidean distance between the object and the centroid
+
+4. For each of the k clusters, update the cluster centroid by calculating the new mean values of all the data points in the cluster.
+
+5. Iteratively minimize the total within sum of squares
+    - iterate steps 3 and 4 until the cluster assignments stop changing or the maximum number of iterations is reached
+    - Note: R uses 10 as the default value for the maximum number of iterations.
+
+
+## k-means clustering in R
+
+- Using the built-in `USArrests` dataset
+
+```{r}
+
+df <- USArrests %>% 
+  scale()
+
+df %>% 
+  head(n=3) %>% 
+  kable()
+```
+
+
+## Estimating the optimal number of clusters
+
+- How do you choose the right number of clusters (k)?
+
+- Simple solution: compute k-means clustering using different values of k.  Then plot the within sum of squares vs the number of clusters k. 
+    - The location of the bend in the plot is generally considered an indicator of the appropriate number of clusters.
+
+```{r, fig.height = 2.75, fig.align = "center"}
+
+df %>% 
+  fviz_nbclust(kmeans, method = "wss") + 
+  geom_vline(xintercept = 4, linetype = 2)
+```
+
+## k-means clustering in R
+
+- Now use k = 4 clusters when running the algorithm:
+
+```{r}
+
+km.res <- df %>% 
+  kmeans(centers = 4, nstart = 25)
+
+km.res$cluster[1:12]
+```
+
+
+## Visualizing k-means clusters
+
+- We would like to visualize the data in a scatter plot with coloring each data point according to its cluster assignment.  
+    - Problem: the data contains more than 2 variables.  What variables to choose for the xy scatter plot?
+
+<br>
+
+- Solution: reduce the number of dimensions by applying a dimensionality reduction algorithm, such as PCA
+    - operates on the four variables and outputs two new variables (that represent the original variables) that can be used to plot
+
+
+## Visualizing k-means clusters
+
+- `fviz_cluster()` can easily visualize k-means clusters, resulting in a plot where observations are represented by points, using PCA if the number of variables is greater than 2.
+
+```{r, fig.height = 3.25, fig.align = "center"}
+
+km.res %>% 
+  fviz_cluster(data = df,
+               ellipse.type = "euclid",    # Concentration ellipse
+               star.plot = TRUE,           # Add segments from centroids to items
+               repel = TRUE,               # Avoid label overplotting
+               ggtheme = theme_minimal())
+```
+
+
+## Advantages and Disadvantages of k-means clustering
+
+- Advantages:
+    - Very simple and fast
+    - can efficiently deal with very large data sets
+
+<br>
+
+- Disadvantages:
+    - Assumes prior knowledge of the data and requires the analyst to choose k in advance
+    - The final results obtained are sensitive to the initial random selection of cluster centers
+        - Therefore, for every different run of the algorithm on the same data set, you may choose different set of initial centers, leading to different clustering results on different runs.
+    - Sensitive to outliers
+
+
+## K-medoids (PAM)
+
+- K-medoids is a robust alternative to k-means clustering
+    - less sensitive to noise and outliers
+    - use medoids as cluster centers instead of means
+
+<br>
+
+- Each cluster is represented by one of the data points in the cluster (medoid)
+    - "medoid" corresponds to the most centrally located point in the cluster
+        - the point for which average dissimilarity between it and all the other members of the cluster is minimized
+
+<br>
+
+- Like in k-means, the algorithm requires the user to specify k beforehand
+
+<br>
+
+- The most common k-mediod clustering algorithm is PAM (Partitioning Around Medoids).
+
+
+## K-medoids - PAM algorithm
+
+Steps:
+
+  1. Select k objects to become the medoids.
+  2. Calculate the dissimilarity matrix.
+  3. Assign every object to its closest medoid.
+  4. For each cluster search if any of the object of the cluster decreases the average dissimilarity coefficient.  If it does, select the observation that decreases this coefficient the most as the medoid for this cluster.
+  5. If at least one medoid has changed, repeat steps 3 and 4, else end the algorithm.
+
+<br>
+
+- Note: the dissimilarity matrix can be computed using Euclidean distances or Manhattan distances
+    - Should get similar results using either, although Manhattan distance is more robust to outliers.
+
+
+## Computing PAM in R
+
+- First, estimate optimal number of clusters, using the average silhouette method
+    - A high average silhouette width indicates a good clustering
+    - The optimal k is the one that maximizes the average silhouette over a range of possible values for k
+    
+```{r, fig.height = 3, fig.align="center"}
+
+df %>% 
+  fviz_nbclust(pam, method = "silhouette") +
+  theme_classic()
+```
+
+
+## Computing PAM in R
+
+- Using `cluster::pam()`, with k = 2:
+
+```{r}
+
+pam.res <- df %>% 
+  pam(2)
+
+pam.res$medoids
+```
+
+
+## Visualizing PAM clusters
+
+```{r, fig.height = 4, fig.align="center"}
+
+pam.res %>% 
+  fviz_cluster(ellipse.type = "t",        # concentration ellipse
+               repel = TRUE,              # avoid label overplotting
+               ggtheme = theme_classic())
+```
+
+
+## CLARA (Clustering Large Applications)
+
+- Extension to k-medoids methods to deal with large data (> several thousand observations)
+    - achieved using the sampling approach
+
+<br>
+    
+- Instead of finding medoids for the entire dataset, CLARA considers a small sample of the data with fixed size and applies the PAM algorithm to generate an optimal set of medoids for the sample  
+    - quality of the resulting medoids is measured by the average dissimilarity between every object in the entire data set and the medoid of its cluster, defined as the cost function
+
+<br>
+
+- CLARA repeats the sampling and clustering processes a pre-specified number of times in order to minimize the sampling bias
+    - final clustering results correspond to the set of mediods with the minimal cost
+
+
+# Hierarchical clustering
+
+## Hierarchical clustering
+
+- Alternative approach to partitioning clustering
+    - does not require to pre-specify the number of clusters to be produced
+    - results in a tree-based representation of the objects, known as a _dendrogram_
+
+<br>
+    
+- Can be subdivided into two types:
+    - Agglomerative clustering
+        - "bottom up" 
+        - each observation is initially considered as a cluster of its own, most similar clusters are successively merged until there is just one single big cluster containing all observations
+        - good at identifying small clusters
+    - Divisive clustering
+        - "top down"
+        - inverse of agglomerative clustering
+        - good at identifying large clusters
+
+
+## Agglomerative clustering
+
+Steps:
+
+1. Prepare the data (standardize/scale)
+2. Compute dis(similarity) information between every pair of objects in the data set
+3. Use linkage function to group objects into hierarchical cluster tree, based on the distance information generated at step 2.
+    - Objects/clusters that are in close proximity are linked together using the linkage function.
+4. Determine where to cut the hierarchical tree into clusters.  This creates a partition of the data.
+
+
+## Agglomerative clustering - Linkage Function
+
+There are several choices to pick from:
+
+- Complete (maximum) linkage
+    - distance between two clusters is defined as the maximum value of all pairwise distances between the elements in cluster 1 and the elements in cluster 2
+    - tends to produce more compact clusters
+
+<br>
+
+- Single (minimum) linkage
+    - distance defined as the minimum value of all pairwise distances 
+    - tends to produce long, "loose" clusters
+
+<br>
+
+- Average (mean) linkage
+    - distance defined as the average distance between the elements in cluster 1 and the elements in cluster 2
+ 
+## Agglomerative clustering - Linkage Function    
+    
+- Centroid linkage
+    - distance defined as the distance between the centroid for cluster 1 and the centroid for cluster 2
+
+<br>
+
+- Ward's minimum variance method
+    - minimizes the total within-cluster variance
+    - at each step the pair of clusters with minimum between-cluster distance are merged
+
+<br>
+
+Note: complete linkage and Ward's method are generally preferred.
+
+## Agglomerative clustering in R
+
+Using `USArrests` data, compute dissimilarity matrix using Euclidean distance:
+
+```{r}
+
+df <- USArrests %>% 
+  scale()
+  
+res.dist <- df %>% 
+  dist(method = "euclidean")
+
+res.dist %>% 
+  as.matrix() %>% 
+  .[1:6, 1:6]
+``` 
+
+## Agglomerative clustering - linkage function
+
+- Linkage function used was `ward.D2`  
+    - Iterate until all the objects in the original data set are linked together in a hierarchical tree.
+
+```{r}
+
+res.hc <- res.dist %>% 
+  hclust(method = "ward.D2")
+
+res.hc
+```
+
+
+## Visualize tree using dendrogram
+
+```{r, fig.height = 4, fig.align="center"}
+
+res.hc %>% 
+  fviz_dend(cex = 0.5)
+```
+
+## Visualize tree using dendrogram
+
+- The height of the fusion, on the vertical axis, indicates the dissimilarity/distance between two objects/clusters
+    - The higher the height of the fusion, the less similar the objects are
+    - known as the _cophenetic distance_ between the two objects
+
+<br>
+  
+- In order to identify sub-groups, we can cut the dendrogram at a certain height.
+
+
+## Verify the cluster tree
+
+- One way to assess that the distances/heights in the tree reflect the original distances accurately, is to compute the correlation between cophenetic distances and the original distance data generated
+    - If the clustering is valid, the correlation should be above 0.75
+    
+```{r}
+
+res.coph <- res.hc %>% 
+  cophenetic()
+
+cor(res.dist, res.coph)
+```
+
+This could be better.  Using a different linkage method, such as "average", creates a tree that represents the original distances slightly better in this case. 
+
+```{r}
+
+res.hc2 <- res.dist %>% 
+  hclust(method = "average")
+
+cor(res.dist, cophenetic(res.hc2))
+```
+
+
+## Cut the dendrogram tree into different groups
+
+It seems that there are four groups, so let's cut the dendrogram tree into four groups.
+
+```{r}
+
+grp <- res.hc %>% 
+  cutree(k = 4)
+
+grp %>% 
+  table()
+
+# Get the rownames for the members of cluster 1
+df %>% 
+  rownames() %>% 
+  .[grp == 1]
+```
+
+## Cut the dendrogram tree into different groups
+
+The results of the cuts can be visualized:
+
+```{r, fig.height = 3.5, fig.align="center"}
+
+res.hc %>% 
+  fviz_dend(k = 4,                    # cut in four groups
+            cex = 0.5,                # label size
+            color_labels_by_k = TRUE, # color labels by groups
+            rect = TRUE               # add rectange around groups
+            )
+```
+
+## Cut the dendrogram tree into different groups
+
+We can also visualize the result in a scatter plot, using principal components.
+
+```{r, fig.height = 3.25, fig.align="center"}
+
+lst <- list(data = df, cluster = grp)
+
+lst %>% 
+  fviz_cluster(ellipse.type = "convex",  # concentration ellipse 
+               repel = TRUE,             # avoid label overplotting
+               show.clust.cent = FALSE, 
+               ggtheme = theme_minimal())
+```
+
+
+# Cluster Validation
+
+## Clustering tendency
+
+- Before applying any clustering method on your data, it's important to evaluate whether the data set contains meaningful clusters (i.e. non-random structures) or not.
+    - If the data does contain meaningful clusters, then how many are there?
+
+<br>
+
+- This process is defined as assessing the _clustering tendency_ or the feasibility of the clustering analysis.
+
+<br>
+
+- We'll work with the `iris` dataset, and create a new random data set generated from the iris data set.
+
+```{r}
+
+df <- iris %>%
+  select(-Species) 
+
+random_df <- apply(df, 2, function(x) {runif(length(x), min(x), max(x))}) %>% 
+  as.data.frame() %>% 
+  scale()
+
+df <- df %>% 
+  scale()
+```
+
+
+## Why do we need to assess clustering tendency?
+
+K-means on random dataset:
+
+```{r, fig.height=3, fig.align="center"}
+
+km.res2 <- random_df %>% 
+  kmeans(3)
+
+lst <- list(data = random_df, cluster = km.res2$cluster)
+
+lst %>% 
+  fviz_cluster(ellipse.type = "norm", geom = "point", stand = FALSE,
+               palette = "jco", ggtheme = theme_classic())
+```
+
+## Why do we need to assess clustering tendency?
+
+- Hierarchical clustering on random dataset
+
+```{r, fig.height=2, fig.align="center"}
+
+random_df %>% 
+  dist() %>% 
+  hclust() %>% 
+  fviz_dend(k = 3, k_colors = "jco", as.ggplot = TRUE, show_labels = FALSE)
+```
+
+We see that the k-means algorithm and the hierarchical clustering impose a classification on the random uniformly distributed data set even if there are no meaningful clusters in it!
+
+## Methods for assessing clustering tendency
+
+- Hopkins statisic
+    - measures the probability that a given data set is generated by a uniform data distribution.
+        - tests the spatial randomness of the data
+    - a value of H about 0.5 means that the data is uniformly distributed
+    - The statistical test has the null hypothesis: the data set is uniformly distributed (i.e. no meaningful clusters)
+
+
+## Assessing clustering tendency - Hopkins statistic
+
+- the function `clustertend::hopkins()` can be used to evaluate this in R.
+
+```{r}
+
+set.seed(123)
+
+df %>% 
+  hopkins(n = nrow(df) - 1)
+
+random_df %>% 
+  hopkins(n = nrow(random_df) - 1)
+```
+
+We see that the iris data set is highly clusterable (H = 0.18), however the random dataset is not clusterable (H ~ 0.50).
+
+
+
+## Choosing the optimal number of clusters
+
+- There is no definitive answer to determining the optimal number of clusters.  It is somewhat subjective and depends on the method used for measuring similarities and the parameters used for partitioning.
+
+- There are different methods for determining the optimal number of clusters for k-means, k-mediods (PAM), and hierarchical clustering:
+
+1. Direct methods
+    - Consist of optimizing a criterion, such as the within cluster sums of squares or the average silhouette.
+        - Elbow method
+        - Silhouette method
+2. Statistical testing methods
+        - Gap statistic
+
+- In addition to these, there are more than thirty other indices and methods that have been used, which can be computed in order to decide the best number of clusters using the "majority rule".
+
+
+## Elbow method
+
+- The Elbow method looks at the total WSS as a function of the number of clusters
+    - One should choose a number of clusters so that adding another cluster doesn't improve much better the total WSS.
+    - Recall: the total WSS measures the compactness of the clustering and we want it to be minimized
+
+<br>
+    
+- Steps:
+    1. Compute clustering algorithm for different values of k.  For instance, varying k from 1 to 10 clusters.
+    2. For each k, calculate the total within-cluster sum of squares (WSS)
+    3. Plot the curve of WSS according to the number of clusters k
+    4. The location of the bend in the plot is generally considered as an indicator of the appropriate number of clusters.
+
+
+## Elbow method in R
+
+```{r, fig.height=3, fig.align="center"}
+
+df <- USArrests %>% 
+  scale()
+
+df %>% 
+  fviz_nbclust(kmeans, method = "wss") +
+  geom_vline(xintercept = 4, linetype = 2) +
+  labs(subtitle = "Elbow method")
+```
+
+## Average silhouette method
+
+- Measures the quality of a clustering, by determining how well each object lies within its cluster.
+    - A high average silhouette width indicates a good clustering
+
+<br>
+    
+- This method computes the average silhouette of observations for different values of k.  The optimal number of clusters k is the one that maximizes the average silhouette over a range of possible values for k.
+
+<br>
+
+- Steps:
+    1. Compute clustering algorithm for different values of k.  For instance, varying k from 1 to 10 clusters.
+    2. For each k, calculate the average silhouette of observations.
+    3. Plot the curve of average silhouette according to the number of clusters k.
+    4. The location of the maximum is considered as the appropriate number of clusters.
+   
+
+## Average silhouette method in R
+
+```{r, fig.height=4, fig.align="center"}
+
+df %>% 
+  fviz_nbclust(kmeans, method = "silhouette") + 
+  labs(subtitle = "Silhouette method")
+```
+
+    
+## Gap statistic method
+
+- Compares the total within intra-cluster variation for different values of k with their expected values under null reference distribution of the data
+    - The estimate of the optimal clusters will be the value that maximizes the gap statistic
+        - This means that the clustering structure is far away from the random uniform distribution of points
+
+<br>
+        
+- Steps:
+    1. Cluster the observed data, varying the number of clusters from k = 1, ..., max, and compute the corresponding total within intra-cluster variation Wk.
+    2. Generate B reference data sets with a random uniform distribution.  Cluster each of these reference data sets with varying number of clusters k = 1, ..., max, and compute the corresponding total within cluster variation Wk.
+    3. Compute the estimated gap statistic as the deviation of the observed Wk value from its expected value Wk under the null hypothesis.  Also compute the standard deviation of the statistics
+    4. Choose the number of clusters as the smallest value of k such that the gap statistic is within one standard deviation of the gap at k + 1.
+
+
+## Gap statistic method in R
+
+```{r, fig.height=3, fig.align="center"}
+
+set.seed(123)
+
+df %>% 
+  fviz_nbclust(kmeans, nstart = 25, method = "gap_stat", nboot = 50) +
+  labs(subtitle = "Gap statistic method")
+```
+
+The optimal number of clusters in the data is k = 4.
+
+
+## Validation statistics
+
+- Cluster validation is used to evaluate clustering algorithm results
+    - Important to avoid finding patterns in random data, helpful when comparing two clustering algorithms
+    
+- Can be categorized into 3 classes:
+    1. Internal cluster validation
+        - uses the internal information of the clustering process to evaluate the goodness of a clustering structure without reference to external information
+    2. External cluster validation
+        - compares the results of a cluster analysis to an externally known result, such as externally provided class labels
+            - since we know the "true" number of clusters in advance, this approach is mainly used for selecting the right clustering algorithm for a specific data set.
+    3. Relative cluster validation
+        - evaluates the clustering structure by varying different parameter values for the same algorithm (e.g. varying k), generally used for determining the optimal number of clusters
+
+
+## Internal Cluster Validation
+
+- Internal validation measures reflect:
+
+    1. Compactness: measures how close are the objects within the same cluster
+        - A lower within-cluster variation is an indicator of good compactness
+    2. Separation: measures how well-separated a cluster is from other clusters.  The indices used as separation measures include:
+        - distances between cluster centers
+        - the pairwise minimum distances between objects in different clusters
+    3. Connectivity: corresponds to what extent items are placed in the same cluster as their nearest neighbors in the data space.
+        - has a value between 0 and infinity and should be minimized
+
+- Two commonly used internal measures for cluster validation
+    1. Silhouette coefficient
+    2. Dunn index
+
+
+## Silhouette coefficient
+
+- Estimates the average distance between clusters.  The silhouette plot displays a measure of how close each point in one cluster is to points in the neighboring clusters.
+
+- Steps:
+    1. For each observation i,  calculate the average dissimilarity ai between i and all other points of the cluster to which it belongs
+    2. For all other clusters C, to which i does not belong, calculate the average dissimilarity d(i,C) of i to all observations of C.  The smallest of these can be seen as the dissimilarity between i and its "neighbor" cluster.
+    3. The silhouette width of the observation i is defined by the formula: Si = (bi - ai)/max(ai, bi)
+    
+- Silhouette width (Si)
+    - Observations with Si close to 1 are very well clustered
+    - Observations with Si close to 0 means that the observation lies between two clusters
+    - Observations with Si close to -1 are poorly clustered and probably placed in the wrong cluster
+
+
+## Silhouette coefficient in R
+
+```{r, fig.height = 3, fig.align="center"}
+
+df <- iris %>% select(-Species) %>% scale()
+
+km.res <- df %>% eclust("kmeans", k = 3, nstart = 25, graph = FALSE)
+
+km.res %>% fviz_silhouette(palette = "jco", ggtheme = theme_classic())
+```
+
+## Dunn index
+
+- Steps:
+    1. For each cluster, compute the distance between each of the objects in the cluster and the objects in the other clusters
+    2. Use the minimum of this pairwise distance as the inter-cluster separation (min.separation)
+    3. For each cluster, compute the distance between the objects in the same cluster
+    4. Use the maximal intra-cluster distance (max.diameter) as the intra-cluster compactness
+    5. Calculate the Dunn index (D) as follows:  D = min.separation/max.diameter
+
+- If the data set contains compact and well-separated clusters, the diameter of the clusters is expected to be small and the distance between the clusters is expected to be large.  
+    - Therefore, Dunn index should be maximized.
+
+
+## Dunn index in R
+
+Using `fpc::cluster.stats()`
+
+```{r}
+
+km_stats <- df %>% 
+  dist() %>% 
+  cluster.stats(km.res$cluster)
+
+# Dunn index
+km_stats$dunn
+```
+
+## External cluster validation
+
+- Can be used to select the suitable clustering algorithm for a given data set
+
+- It is possible to quantify the agreement between partitioning clusters and external reference using either:
+    - corrected Rand index
+        - varies from -1 (no agreement) to 1 (perfect agreement)
+    - Meila's variation index (VI)
+
+
+## External cluster validation in R
+
+- Does the K-means clustering match the true structure of the data?
+    - Compute a cross-tab between k-means clusters and the reference Species labels
+
+```{r}
+
+table(iris$Species, km.res$cluster)
+```
+
+- We see that:
+    - All setosa species (n=50) have been classified in cluster 1
+    - A large number of versicolor species (n=39) have been classified in cluster 3.  Some (n=11) have been classified in cluster 2.
+    - A large number of virginica species (n=36) have been classified in cluster 2.  some (n=14) have been classified in cluster 3.
+    
+
+## External cluster validation in R    
+
+- It's possible to quantify the agreement between species and k-means clusters using either the corrected Rand index and Meila's VI:
+
+```{r}
+
+# compute cluster stats
+species <- as.numeric(iris$Species)
+  
+clust_stats <- df %>% 
+  dist() %>% 
+  cluster.stats(species, km.res$cluster)
+
+# corrected Rand index
+clust_stats$corrected.rand
+
+# Meila's VI
+clust_stats$vi
+```
+
+
+## Stability Measures for comparing clustering algorithms
+
+- evaluate the consistency of a clustering result by comparing it with the clusters obtained after each column (variable) is removed, one at a time
+
+- average proportion of non-overlap (APN)
+    - measures the average proportion of observations not placed in the same cluster by clustering based on the full data and clustering based on the data with a single column removed
+- average distance (AD)
+    - measures the average distance between observations placed in the same cluster under both cases (full and one column removed)
+- average distance between means (ADM)
+    - measures the average distance between cluster centers for observations placed in the same cluster under both cases
+- figure of merit (FOM)
+    - measures the average intra-cluster variance of the deleted column, where the clustering is based on the remaining (undeleted) columns
+
+
+## Stability measures in R
+
+- All based on the cross-classification table of the original clustering on the full data with the clustering based on the removal of one column
+    - The values of APN, ADM, and FOM ranges from 0 to 1, with smaller value corresponding with highly consistent clustering results
+    - AD has a value between 0 and infinity, with smaller values preferred
+
+```{r, warning = FALSE}
+
+df %>% 
+  clValid(nClust = 2:6,
+          clMethods = c("hierarchical", "kmeans", "pam"),
+          validation = "stability") %>% 
+  optimalScores()
+```
+
+- For the APN and ADM measures, hierarchical clustering with two clusters again gives the best score.  For the other measures, PAM with six clusters has the best score.
+
+
+# Advanced clustering
+
+## Advanced clustering methods
+
+- Hybrid methods
+    - Hierarchical K-means clustering
+        - First hierarchical clustering, cut tree into k-clusters, compute the mean of each cluster and then use k-means using those
+
+<br>
+        
+- Fuzzy clustering
+    - each element has a probability of belonging to each cluster
+
+<br>
+    
+- Density-based clustering (DBSCAN)
+    - Works well for data that does not have spherical shaped clusters (S-shaped, linear shaped)
+    - can identify outliers
+
+
+# Use Case
+
+## Jeeluna Dataset
+
+- Client is using a dataset to study information on adolescent health behaviors.
+    - over 12,000 observations
+    - variables are answers to survey questions related to 9 different health behavior domains (e.g. diet, sleep, mental health)
+
+<br>
+    
+- Stated goal is to see how the observations cluster in terms of their behaviors in the domains
+
+<br>
+
+- Also interested in how the variable questions are related and should be clustered
+
+## What client has done so far (and should improve)
+
+- Has not scaled/standardized variables to z-scores before performing clustering
+    - Attempted to do this in a different way using common denominators, but hard to follow and confusing
+
+<br>
+
+- Performed k-means clustering with 2, 3, and 4 clusters and then ANOVA to compare between clusters for each
+    - Interprets results as clustering _variables_, when they should be clustering _observations_, as stated in goals
+    - Also performed hierarchical clustering to compare results to k-means clustering
+
+<br>
+
+- Does not give solid conclusion as to which number of clusters is optimal for their data
+
+<br>
+
+- Confuses clustering variables and clustering observations
+
+
+## What client should do to improve their study
+
+- Standardize variables to z-scores before clustering
+    - much easier to interpret
+
+<br>
+    
+- If more interested in clustering variables (question types), should perform PCA
+    - more common and much easier (though there are variable clustering procedures available in R and SAS)
+  
+<br>  
+    
+- Use a method to determine optimal number of clusters before doing any k-means and use that as evidence as to why they chose a specific k.
+    - Also perform hierarchical clustering and interpret dendrogram to compare/confirm results.
+
+
+## References
+
+Kassambara, A. (2017) _Practical Guide to Cluster Analysis in R: Unsupervised Machine Learning (Multivariate Analysis)_. STHDA
+
+<br>
+
+Hastie, T., Tibshirani, R.,, Friedman, J. (2001). _The Elements of Statistical Learning_. New York, NY, USA: Springer New York Inc.. 
